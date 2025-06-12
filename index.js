@@ -21,6 +21,7 @@ async function run() {
   try {
 
     const coffeeCollection = client.db('coffeeDB').collection('coffee')
+    const orders = client.db('coffeeDB').collection('orders')
 
     app.get('/coffees', async (req, res) => {
       const allCoffee = req.body
@@ -73,8 +74,66 @@ async function run() {
 
     app.post('/coffees', async (req, res) => {
       const newProduct = req.body
+      const quantity = newProduct.quantity
+      newProduct.quantity = parseInt(quantity)
       const result = await coffeeCollection.insertOne(newProduct)
       res.send(result)
+    })
+
+    app.get('/myorders/:email', async(req,res)=>{
+       const email = req.params.email
+       const filter = { customerEmail: email }
+       const myorders = await orders.find(filter).toArray()
+
+       for(const order of myorders){
+           const id = order.coffeeId
+           const filter = { _id: new ObjectId(id) }
+           const fullCoffeeData = await coffeeCollection.findOne(filter)
+           order.name = fullCoffeeData.name
+           order.photo = fullCoffeeData.photo
+           order.price = fullCoffeeData.price
+       }
+
+       res.send(myorders)
+    })
+
+    app.post('/orders/:coffeeId', async (req, res) => {
+      const id = req.params.coffeeId
+      const orderData = req.body
+      const result = await orders.insertOne(orderData)
+
+        if(result.acknowledged) {
+          // update quantity from coffee collection
+          await coffeeCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $inc: {
+                quantity: -1
+              }
+            }
+          )
+      }
+      res.send(result)
+    })
+
+    app.delete('/cancelOrder/:id', async(req,res)=>{
+        const id = req.params.id
+        const query = { _id: new ObjectId(id) }
+        const order = await orders.findOne(query);
+        const result = await orders.deleteOne(query)
+
+        if(result.acknowledged){
+          await coffeeCollection.updateOne(
+                { _id: new ObjectId(order.coffeeId) },
+             {
+              $inc: {
+                quantity: +1
+              }
+            }
+          )
+
+        }
+        res.send(result)
     })
 
 
